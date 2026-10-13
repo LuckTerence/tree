@@ -88,6 +88,9 @@ func execForEdit(pn *Node, fq FilterQuery, op string, v Node) error {
 // resolveAndEdit walks the FilterQuery path step by step, writing back
 // modified Array nodes at each level so changes propagate to the root.
 func resolveAndEdit(pn *Node, fq FilterQuery, step int, op string, v Node) error {
+	if sameNode(*pn, v) {
+		return nil // never edit inside the value assigned by an earlier match
+	}
 	if step >= len(fq)-1 {
 		return editQuery(pn, fq[len(fq)-1], op, v)
 	}
@@ -102,26 +105,30 @@ func resolveAndEdit(pn *Node, fq FilterQuery, step int, op string, v Node) error
 	case ArrayQuery:
 		index := int(tq)
 		if a := n.Array(); a != nil {
-			index = tq.resolveIndex(len(a))
+			if index = tq.resolveIndex(len(a)); index < 0 {
+				return fmt.Errorf("cannot index array with %d", int(tq))
+			}
 		}
 		return resolveArrayStep(pn, n, index, fq, step, op, v)
 
 	case WalkQuery:
 		key := string(tq)
-		return Walk(n, func(wn Node, keys []any) error {
-			if wn.Has(key) {
-				if en, ok := wn.(EditorNode); ok {
-					child := wn.Get(key)
-
-					if err := resolveAndEdit(&child, fq, step+1, op, v); err != nil {
-						return err
-					}
-
-					return en.Set(key, child)
-				}
+		for _, t := range tq.walkTargets(n, v) {
+			en, ok := t.live(n)
+			if !ok || !en.Has(key) {
+				continue
 			}
-			return nil
-		})
+			child := en.Get(key)
+
+			if err := resolveAndEdit(&child, fq, step+1, op, v); err != nil {
+				return err
+			}
+
+			if err := en.Set(key, child); err != nil {
+				return err
+			}
+		}
+		return nil
 
 	case SelectQuery:
 		return resolveSelectStep(pn, n, tq, fq, step, op, v)
@@ -169,9 +176,9 @@ func resolveMapStep(pn *Node, n Node, key string, fq FilterQuery, step int, op s
 			return nil
 		}
 		if i >= len(a) {
-			na := make(Array, i+1)
-			copy(na, a)
-			a = na
+			if a, err = growArray(a, i); err != nil {
+				return err
+			}
 		}
 		child := a[i]
 		if child == nil {
@@ -216,9 +223,10 @@ func resolveArrayStep(pn *Node, n Node, index int, fq FilterQuery, step int, op 
 
 	if a := n.Array(); a != nil {
 		if index >= len(a) {
-			na := make(Array, index+1)
-			copy(na, a)
-			a = na
+			var err error
+			if a, err = growArray(a, index); err != nil {
+				return err
+			}
 		}
 		child := a[index]
 		if child == nil {
