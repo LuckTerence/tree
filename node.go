@@ -9,7 +9,7 @@ import (
 // Type represents the Node type.
 type Type int
 
-// These variables are the Node types.
+// These constants are the Node types.
 const (
 	TypeArray       Type = 0b0001
 	TypeMap         Type = 0b0010
@@ -30,7 +30,7 @@ func (t Type) IsMap() bool {
 	return t == TypeMap
 }
 
-// IsValue returns true if t is TypeStringValue or TypeBoolValue or TypeNumberValue.
+// IsValue returns true if t has the TypeValue bit set.
 func (t Type) IsValue() bool {
 	return t&TypeValue != 0
 }
@@ -86,7 +86,7 @@ type Node interface {
 	// Type returns this node type.
 	Type() Type
 	// Array returns this node as an Array.
-	// If this type is not Array, returns a Array(nil).
+	// If this type is not Array, returns an Array(nil).
 	Array() Array
 	// Map returns this node as a Map.
 	// If this type is not Map, returns a Map(nil).
@@ -116,54 +116,54 @@ type EditorNode interface {
 	Delete(key any) error
 }
 
-// Any is an interface that defines any node.
+// Any wraps a Node and delegates every Node method to it.
 type Any struct {
 	Node
 }
 
 var _ Node = (*Any)(nil)
 
-// IsNil returns true if this node is nil.
+// IsNil delegates to the wrapped Node.
 func (n Any) IsNil() bool {
 	return n.Node.IsNil()
 }
 
-// Type returns TypeArray.
+// Type returns the type of the wrapped Node.
 func (n Any) Type() Type {
 	return n.Node.Type()
 }
 
-// Array returns this node as an Array.
+// Array returns the wrapped Node as an Array.
 func (n Any) Array() Array {
 	return n.Node.Array()
 }
 
-// Map returns nil.
+// Map returns the wrapped Node as a Map.
 func (n Any) Map() Map {
 	return n.Node.Map()
 }
 
-// Value returns nil.
+// Value returns the wrapped Node as a Value.
 func (n Any) Value() Value {
 	return n.Node.Value()
 }
 
-// Has checks this node has key.
+// Has delegates to the wrapped Node.
 func (n Any) Has(keys ...any) bool {
 	return n.Node.Has(keys...)
 }
 
-// Get returns the child node that matches the specified keys.
+// Get returns the child node of the wrapped Node that matches the specified keys.
 func (n Any) Get(keys ...any) Node {
 	return n.Node.Get(keys...)
 }
 
-// Each calls the callback function for each Array values.
+// Each delegates to the wrapped Node.
 func (n Any) Each(cb func(key any, n Node) error) error {
 	return n.Node.Each(cb)
 }
 
-// Find finds a node using the query expression.
+// Find finds nodes in the wrapped Node using the query expression.
 func (n Any) Find(expr string) ([]Node, error) {
 	return n.Node.Find(expr)
 }
@@ -191,12 +191,12 @@ func (n Array) Array() Array {
 	return n
 }
 
-// Map returns nil.
+// Map returns a Map(nil).
 func (n Array) Map() Map {
 	return nil
 }
 
-// Value returns nil.
+// Value returns a NilValue.
 func (n Array) Value() Value {
 	return Nil
 }
@@ -248,7 +248,7 @@ func (n Array) Get(keys ...any) Node {
 	return Nil
 }
 
-// Each calls the callback function for each Array values.
+// Each calls the callback function for each element of the Array.
 func (n Array) Each(cb func(key any, n Node) error) error {
 	for i, v := range n {
 		if err := cb(i, v); err != nil {
@@ -312,7 +312,7 @@ func (n Map) Type() Type {
 	return TypeMap
 }
 
-// Array returns nil.
+// Array returns an Array(nil).
 func (n Map) Array() Array {
 	return nil
 }
@@ -322,7 +322,7 @@ func (n Map) Map() Map {
 	return n
 }
 
-// Value returns nil.
+// Value returns a NilValue.
 func (n Map) Value() Value {
 	return Nil
 }
@@ -384,7 +384,7 @@ func (n Map) Keys() []string {
 	return keys
 }
 
-// Values returns values of the map.
+// Values returns values of the map, ordered by sorted key.
 func (n Map) Values() []Node {
 	values := make([]Node, len(n))
 	for i, k := range n.Keys() {
@@ -393,7 +393,7 @@ func (n Map) Values() []Node {
 	return values
 }
 
-// Append returns a error.
+// Append returns an error.
 func (n Map) Append(v Node) error {
 	return fmt.Errorf("cannot append to map")
 }
@@ -424,7 +424,7 @@ func (n Map) Delete(key any) error {
 	return fmt.Errorf("cannot index array with %v", key)
 }
 
-// Each calls the callback function for each Map values.
+// Each calls the callback function for each value of the Map, in sorted key order.
 func (n Map) Each(cb func(key any, n Node) error) error {
 	for _, k := range n.Keys() {
 		if err := cb(k, n[k]); err != nil {
