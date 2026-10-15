@@ -255,6 +255,72 @@ func TestMethodQuery(t *testing.T) {
 				Map{"name": StringValue("Alice"), "age": NumberValue(30)},
 				Map{"name": StringValue("Bob"), "age": NumberValue(25)},
 			}},
+		}, {
+			caseName: "sort mixed types",
+			q:        &SortQuery{},
+			n:        Array{NumberValue(3), StringValue("a"), BoolValue(true), Nil, NumberValue(1), BoolValue(false)},
+			want:     []Node{Array{Nil, BoolValue(false), BoolValue(true), NumberValue(1), NumberValue(3), StringValue("a")}},
+		}, {
+			caseName: "rsort mixed types",
+			q:        &RSortQuery{},
+			n:        Array{NumberValue(3), StringValue("a"), BoolValue(true), Nil, NumberValue(1), BoolValue(false)},
+			want:     []Node{Array{StringValue("a"), NumberValue(3), NumberValue(1), BoolValue(true), BoolValue(false), Nil}},
+		}, {
+			caseName: "sort arrays and objects by type rank keeping order",
+			q:        &SortQuery{},
+			n:        Array{Map{"k": NumberValue(1)}, Array{NumberValue(2)}, StringValue("s"), Array{NumberValue(1)}, Map{"k": NumberValue(0)}},
+			want:     []Node{Array{StringValue("s"), Array{NumberValue(2)}, Array{NumberValue(1)}, Map{"k": NumberValue(1)}, Map{"k": NumberValue(0)}}},
+		}, {
+			caseName: "sort keeps order of equal keys",
+			q:        &SortQuery{Expr: ".age", Query: MapQuery("age")},
+			n: Array{
+				Map{"name": StringValue("A"), "age": NumberValue(2)},
+				Map{"name": StringValue("B"), "age": NumberValue(1)},
+				Map{"name": StringValue("C"), "age": NumberValue(2)},
+			},
+			want: []Node{Array{
+				Map{"name": StringValue("B"), "age": NumberValue(1)},
+				Map{"name": StringValue("A"), "age": NumberValue(2)},
+				Map{"name": StringValue("C"), "age": NumberValue(2)},
+			}},
+		}, {
+			caseName: "rsort keeps order of equal keys",
+			q:        &RSortQuery{Expr: ".age", Query: MapQuery("age")},
+			n: Array{
+				Map{"name": StringValue("A"), "age": NumberValue(1)},
+				Map{"name": StringValue("B"), "age": NumberValue(1)},
+				Map{"name": StringValue("C"), "age": NumberValue(2)},
+			},
+			want: []Node{Array{
+				Map{"name": StringValue("C"), "age": NumberValue(2)},
+				Map{"name": StringValue("A"), "age": NumberValue(1)},
+				Map{"name": StringValue("B"), "age": NumberValue(1)},
+			}},
+		}, {
+			caseName: "sort missing key sorts as null",
+			q:        &SortQuery{Expr: ".age", Query: MapQuery("age")},
+			n:        Array{Map{"age": NumberValue(2)}, Map{"name": StringValue("x")}},
+			want:     []Node{Array{Map{"name": StringValue("x")}, Map{"age": NumberValue(2)}}},
+		}, {
+			caseName: "sort key query error",
+			q:        &SortQuery{Expr: ".age", Query: MapQuery("age")},
+			n:        Array{Map{"age": NumberValue(1)}, NumberValue(5)},
+			errstr:   `cannot index array with "age"`,
+		}, {
+			caseName: "rsort key query error",
+			q:        &RSortQuery{Expr: ".age", Query: MapQuery("age")},
+			n:        Array{Map{"age": NumberValue(1)}, NumberValue(5)},
+			errstr:   `cannot index array with "age"`,
+		}, {
+			caseName: "sort key query error on single element",
+			q:        &SortQuery{Expr: ".age", Query: MapQuery("age")},
+			n:        Array{NumberValue(5)},
+			errstr:   `cannot index array with "age"`,
+		}, {
+			caseName: "rsort key query error on single element",
+			q:        &RSortQuery{Expr: ".age", Query: MapQuery("age")},
+			n:        Array{NumberValue(5)},
+			errstr:   `cannot index array with "age"`,
 		},
 	}
 	for _, tc := range testCases {

@@ -332,6 +332,96 @@ func (q *LastQuery) String() string {
 	return "last()"
 }
 
+// Ranks of the cross-type order used by sort and rsort:
+// null < false < true < numbers < strings < arrays < objects.
+const (
+	sortRankNull = iota
+	sortRankFalse
+	sortRankTrue
+	sortRankNumber
+	sortRankString
+	sortRankArray
+	sortRankMap
+)
+
+func sortRank(n Node) int {
+	if n == nil {
+		return sortRankNull
+	}
+	switch n.Type() {
+	case TypeBoolValue:
+		if n.Value().Bool() {
+			return sortRankTrue
+		}
+		return sortRankFalse
+	case TypeNumberValue:
+		return sortRankNumber
+	case TypeStringValue:
+		return sortRankString
+	case TypeArray:
+		return sortRankArray
+	case TypeMap:
+		return sortRankMap
+	}
+	return sortRankNull
+}
+
+// compareSortKeys orders keys by type rank first. Numbers and strings are then
+// compared by value; arrays and objects of the same type compare as equal,
+// so the stable sort keeps their original order.
+func compareSortKeys(a, b Node) int {
+	ra, rb := sortRank(a), sortRank(b)
+	if ra != rb {
+		if ra < rb {
+			return -1
+		}
+		return 1
+	}
+	if ra == sortRankNumber || ra == sortRankString {
+		va, vb := a.Value(), b.Value()
+		if va.Compare(LT, vb) {
+			return -1
+		}
+		if vb.Compare(LT, va) {
+			return 1
+		}
+	}
+	return 0
+}
+
+// sortNodes returns a stably sorted copy of a. The key of each element is
+// evaluated once, and the first error from q aborts the sort.
+func sortNodes(a Array, q Query, desc bool) (Array, error) {
+	type item struct{ node, key Node }
+	items := make([]item, len(a))
+	for i, n := range a {
+		key := n
+		if q != nil {
+			rs, err := q.Exec(n)
+			if err != nil {
+				return nil, err
+			}
+			key = Nil
+			if len(rs) > 0 {
+				key = rs[0]
+			}
+		}
+		items[i] = item{node: n, key: key}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		c := compareSortKeys(items[i].key, items[j].key)
+		if desc {
+			return c > 0
+		}
+		return c < 0
+	})
+	sorted := make(Array, len(items))
+	for i, it := range items {
+		sorted[i] = it.node
+	}
+	return sorted, nil
+}
+
 // SortQuery sorts elements in an array.
 // For arrays of objects, it can optionally sort by a query expression.
 type SortQuery struct {
@@ -362,33 +452,11 @@ func (q *SortQuery) Exec(n Node) ([]Node, error) {
 		return []Node{n}, nil
 	}
 	a := n.Array()
-	if len(a) <= 1 {
-		return []Node{a}, nil
+
+	sorted, err := sortNodes(a, q.Query, false)
+	if err != nil {
+		return nil, err
 	}
-
-	sorted := make(Array, len(a))
-	copy(sorted, a)
-
-	sort.SliceStable(sorted, func(i, j int) bool {
-		var vi, vj Value
-		if q.Query != nil {
-			if ri, _ := q.Query.Exec(sorted[i]); len(ri) > 0 {
-				vi = ri[0].Value()
-			} else {
-				vi = Nil
-			}
-			if rj, _ := q.Query.Exec(sorted[j]); len(rj) > 0 {
-				vj = rj[0].Value()
-			} else {
-				vj = Nil
-			}
-		} else {
-			vi = sorted[i].Value()
-			vj = sorted[j].Value()
-		}
-		return vi.Compare(LT, vj)
-	})
-
 	return []Node{sorted}, nil
 }
 
@@ -429,33 +497,11 @@ func (q *RSortQuery) Exec(n Node) ([]Node, error) {
 		return []Node{n}, nil
 	}
 	a := n.Array()
-	if len(a) <= 1 {
-		return []Node{a}, nil
+
+	sorted, err := sortNodes(a, q.Query, true)
+	if err != nil {
+		return nil, err
 	}
-
-	sorted := make(Array, len(a))
-	copy(sorted, a)
-
-	sort.SliceStable(sorted, func(i, j int) bool {
-		var vi, vj Value
-		if q.Query != nil {
-			if ri, _ := q.Query.Exec(sorted[i]); len(ri) > 0 {
-				vi = ri[0].Value()
-			} else {
-				vi = Nil
-			}
-			if rj, _ := q.Query.Exec(sorted[j]); len(rj) > 0 {
-				vj = rj[0].Value()
-			} else {
-				vj = Nil
-			}
-		} else {
-			vi = sorted[i].Value()
-			vj = sorted[j].Value()
-		}
-		return vi.Compare(GT, vj)
-	})
-
 	return []Node{sorted}, nil
 }
 
