@@ -1164,6 +1164,7 @@ func TestEditSequence(t *testing.T) {
 		n        Node
 		exprs    []string
 		want     Node
+		errstr   string
 	}{
 		{
 			caseName: "walk set empty array then append through separate paths",
@@ -1175,14 +1176,37 @@ func TestEditSequence(t *testing.T) {
 			n:        Array{Map{"b": NumberValue(0)}, Map{"b": NumberValue(0)}},
 			exprs:    []string{`.[].b = []`, `[0].b += 1`, `[1].b += 2`},
 			want:     Array{Map{"b": Array{NumberValue(1)}}, Map{"b": Array{NumberValue(2)}}},
+		}, {
+			caseName: "select set on holes left by array growth",
+			n:        Map{"a": Array{}},
+			exprs:    []string{`.a[2] = 1`, `.a[].x = 1`},
+			errstr:   `cannot index array with "x"`,
+		}, {
+			caseName: "select intermediate set on holes left by array growth",
+			n:        Map{"a": Array{}},
+			exprs:    []string{`.a[2] = 1`, `.a[].x.y = 1`},
+			errstr:   `cannot index array with "x"`,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.caseName, func(t *testing.T) {
+			var err error
 			for _, expr := range tc.exprs {
-				if err := Edit(&(tc.n), expr); err != nil {
-					t.Fatalf("%s: unexpected error: %+v", expr, err)
+				if err = Edit(&(tc.n), expr); err != nil {
+					break
 				}
+			}
+			if tc.errstr != "" {
+				if err == nil {
+					t.Fatalf("no error; want %s", tc.errstr)
+				}
+				if err.Error() != tc.errstr {
+					t.Errorf("got error %s; want %s", err.Error(), tc.errstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %+v", err)
 			}
 			if !reflect.DeepEqual(tc.n, tc.want) {
 				t.Errorf("got %#v; want %#v", tc.n, tc.want)
@@ -1228,24 +1252,33 @@ func TestEditResolveSelectStepSelectorError(t *testing.T) {
 }
 
 // FuzzEdit exercises the Edit expression parser and evaluator with
-// arbitrary input against a fresh empty Map. It only requires that
-// invalid expressions return an error rather than panicking.
+// arbitrary JSON input and two edit expressions applied in turn. It
+// only requires that invalid input or expressions return an error
+// rather than panicking.
 func FuzzEdit(f *testing.F) {
-	seeds := []string{
-		`.a = 1`,
-		`.a = "x"`,
-		`.a += 1`,
-		`.a.b = true`,
-		`.a = [1, 2, 3]`,
-		`.a = {"k": "v"}`,
-		`delete .a`,
+	seeds := [][3]string{
+		{`{}`, `.a = 1`, ``},
+		{`{}`, `.a = "x"`, ``},
+		{`{}`, `.a += 1`, ``},
+		{`{}`, `.a.b = true`, ``},
+		{`{}`, `.a = [1, 2, 3]`, ``},
+		{`{}`, `.a = {"k": "v"}`, ``},
+		{`{}`, `delete .a`, ``},
+		{`{"a":[]}`, `.a[2] = 1`, `.a[].x = 1`},
+		{`{"a":[]}`, `.a[2] = 1`, `.a[].x.y = 1`},
 	}
 	for _, s := range seeds {
-		f.Add(s)
+		f.Add(s[0], s[1], s[2])
 	}
-	f.Fuzz(func(t *testing.T, expr string) {
-		var n Node = Map{}
-		_ = Edit(&n, expr)
+	f.Fuzz(func(t *testing.T, input, expr1, expr2 string) {
+		n, err := UnmarshalJSON([]byte(input))
+		if err != nil {
+			return
+		}
+		if err := Edit(&n, expr1); err != nil {
+			return
+		}
+		_ = Edit(&n, expr2)
 	})
 }
 

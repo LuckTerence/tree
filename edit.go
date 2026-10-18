@@ -352,6 +352,9 @@ func resolveArrayStep(pn *Node, n Node, index int, fq FilterQuery, step int, op 
 func resolveSelectStep(pn *Node, n Node, sq SelectQuery, fq FilterQuery, step int, op string, v Node) error {
 	if a := n.Array(); a != nil {
 		for i, elem := range a {
+			if elem == nil {
+				elem = Nil // a hole left by growArray
+			}
 			if sq.Selector != nil {
 				ok, err := sq.Matches(elem)
 				if err != nil {
