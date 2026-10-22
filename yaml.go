@@ -2,6 +2,8 @@ package tree
 
 import (
 	"bytes"
+	"fmt"
+	"maps"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -51,12 +53,16 @@ func (n *Map) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&v); err != nil {
 		return err
 	}
+	tn := ToNode(v)
+	m, ok := tn.(Map)
+	if !ok {
+		return &yaml.TypeError{Errors: []string{fmt.Sprintf("line %d: cannot unmarshal %s into tree.Map", value.Line, value.Tag)}} // lets yaml.v3 go on decoding
+	}
 	if *n == nil {
-		*n = make(Map)
+		*n = m
+		return nil
 	}
-	for k, v := range ToNode(v).Map() {
-		(*n)[k] = v
-	}
+	maps.Copy(*n, m)
 	return nil
 }
 
@@ -66,10 +72,12 @@ func (n *Array) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&v); err != nil {
 		return err
 	}
-	_ = ToNode(v).Array().Each(func(key any, v Node) error {
-		*n = append(*n, v)
-		return nil
-	})
+	tn := ToNode(v)
+	a, ok := tn.(Array)
+	if !ok {
+		return &yaml.TypeError{Errors: []string{fmt.Sprintf("line %d: cannot unmarshal %s into tree.Array", value.Line, value.Tag)}} // lets yaml.v3 go on decoding
+	}
+	*n = a // a reused Array is replaced here; UnmarshalJSON refills it in place
 	return nil
 }
 

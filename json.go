@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 )
 
 // MarshalJSON returns the JSON encoding of the specified node.
@@ -20,29 +21,34 @@ func DecodeJSON(dec *json.Decoder) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	if t == nil {
-		return Nil, nil
+	switch t.(type) {
+	case nil, string, float64, bool, json.Delim:
+		return jsonElem(dec, t, 1)
 	}
+	return nil, fmt.Errorf("unknown token %s", tokenText(t))
+}
+
+// jsonEnd rejects anything after the top-level value, as json.Unmarshal does.
+func jsonEnd(dec *json.Decoder) error {
+	t, err := dec.Token()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("unexpected %s after top-level value", tokenText(t))
+}
+
+// tokenText prints t as it reads in JSON, for error messages.
+func tokenText(t json.Token) string {
 	switch tt := t.(type) {
+	case nil:
+		return "null"
 	case string:
-		return StringValue(tt), nil
-	case float64:
-		return NumberValue(tt), nil
-	case bool:
-		return BoolValue(tt), nil
-	case json.Delim:
-		switch ds := tt.String(); ds {
-		case "{":
-			m := Map{}
-			if err := jsonMap(dec, &m, 1); err != nil {
-				return nil, err
-			}
-			return m, nil
-		case "[":
-			return jsonArray(dec, Array{}, 1)
-		}
+		return strconv.Quote(tt)
 	}
-	return nil, fmt.Errorf("unknown token %#v", t)
+	return fmt.Sprint(t)
 }
 
 // unexpectedEOF turns io.EOF inside a container into io.ErrUnexpectedEOF, as encoding/json does.
@@ -53,69 +59,82 @@ func unexpectedEOF(err error) error {
 	return err
 }
 
-// UnmarshalJSON parses the JSON-encoded data to a Node.
+// UnmarshalJSON parses the JSON-encoded data to a Node, rejecting trailing data as json.Unmarshal does.
 func UnmarshalJSON(data []byte) (Node, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
-	return DecodeJSON(dec)
+	n, err := DecodeJSON(dec)
+	if err != nil {
+		return nil, err
+	}
+	if err := jsonEnd(dec); err != nil {
+		return nil, err
+	}
+	return n, nil
 }
 
-// UnmarshalJSON is an implementation of json.Unmarshaler.
+// UnmarshalJSON implements json.Unmarshaler, leaving n as it is on error; null gives Nil.
 func (n *Any) UnmarshalJSON(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	t, err := dec.Token()
+	v, err := UnmarshalJSON(data)
 	if err != nil {
 		return err
 	}
-	d, ok := t.(json.Delim)
-	if ok {
-		switch d.String() {
-		case "{":
-			m := Map{}
-			n.Node = m
-			return jsonMap(dec, &m, 1)
-		case "[":
-			a, err := jsonArray(dec, Array{}, 1)
-			if err != nil {
-				return err
-			}
-			n.Node = a
-			return nil
-		}
-	}
-	n.Node = jsonValue(t)
+	n.Node = v
 	return nil
 }
 
-// UnmarshalJSON is an implementation of json.Unmarshaler.
+// UnmarshalJSON implements json.Unmarshaler: it sets each key of the object in n, keeping n's other keys, and leaves n as it is on null.
+// Like encoding/json, it decodes in place, so on error n may hold some of the new keys.
 func (n *Map) UnmarshalJSON(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	t, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	d, ok := t.(json.Delim)
-	if !ok || d.String() != "{" {
-		return fmt.Errorf("unknown token %#v", t)
-	}
-	if *n == nil {
-		*n = make(Map)
-	}
-	return jsonMap(dec, n, 1)
+	return unmarshalContainer(data, '{', func(dec *json.Decoder) (func(), error) {
+		m := *n
+		if m == nil {
+			m = make(Map)
+		}
+		if err := jsonMap(dec, m, 1); err != nil {
+			return nil, err
+		}
+		return func() { *n = m }, nil
+	})
 }
 
-// UnmarshalJSON is an implementation of json.Unmarshaler.
+// UnmarshalJSON implements json.Unmarshaler: it resets n to length zero and refills it, leaving n as it is on null.
+// It reuses n's backing array, which other nodes may share, and on error n keeps its length, holding what was decoded into its backing array.
 func (n *Array) UnmarshalJSON(data []byte) error {
+	return unmarshalContainer(data, '[', func(dec *json.Decoder) (func(), error) {
+		base := (*n)[:0]
+		if base == nil {
+			base = Array{} // [] gives an empty Array, not a nil one that marshals as null
+		}
+		a, err := jsonArray(dec, base, 1)
+		if err != nil {
+			return nil, err
+		}
+		return func() { *n = a }, nil
+	})
+}
+
+// unmarshalContainer reads data as one container opened by open, treating null as a no-op and running decode's assign only after the trailing-data check.
+func unmarshalContainer(data []byte, open json.Delim, decode func(dec *json.Decoder) (assign func(), err error)) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	t, err := dec.Token()
 	if err != nil {
 		return err
 	}
-	d, ok := t.(json.Delim)
-	if !ok || d.String() != "[" {
-		return fmt.Errorf("unknown token %#v", t)
+	if t == nil {
+		return jsonEnd(dec)
 	}
-	*n, err = jsonArray(dec, *n, 1)
-	return err
+	if d, ok := t.(json.Delim); !ok || d != open {
+		return fmt.Errorf("unknown token %s", tokenText(t))
+	}
+	assign, err := decode(dec)
+	if err != nil {
+		return err
+	}
+	if err := jsonEnd(dec); err != nil {
+		return err
+	}
+	assign()
+	return nil
 }
 
 // MarshalJSON is an implementation of json.Marshaler.
@@ -124,7 +143,7 @@ func (n NilValue) MarshalJSON() ([]byte, error) {
 }
 
 // jsonMap decodes the members of a JSON object into m, after its opening brace has been read.
-func jsonMap(dec *json.Decoder, m *Map, depth int) error {
+func jsonMap(dec *json.Decoder, m Map, depth int) error {
 	for {
 		t, err := dec.Token()
 		if err != nil {
@@ -134,11 +153,11 @@ func jsonMap(dec *json.Decoder, m *Map, depth int) error {
 			if d == '}' {
 				return nil
 			}
-			return fmt.Errorf("unknown token %#v", t)
+			return fmt.Errorf("unknown token %s", tokenText(t))
 		}
 		key, ok := t.(string)
 		if !ok {
-			return fmt.Errorf("unknown token %#v", t)
+			return fmt.Errorf("unknown token %s", tokenText(t))
 		}
 
 		t, err = dec.Token()
@@ -149,7 +168,7 @@ func jsonMap(dec *json.Decoder, m *Map, depth int) error {
 		if err != nil {
 			return err
 		}
-		(*m)[key] = v
+		m[key] = v
 	}
 }
 
@@ -184,14 +203,14 @@ func jsonElem(dec *json.Decoder, t json.Token, depth int) (Node, error) {
 		return jsonValue(t), nil
 	}
 	if d != '{' && d != '[' {
-		return nil, fmt.Errorf("unknown token %#v", t)
+		return nil, fmt.Errorf("unknown token %s", tokenText(t))
 	}
 	if depth > maxJSONDepth {
 		return nil, errMaxDepth
 	}
 	if d == '{' {
 		m := Map{}
-		if err := jsonMap(dec, &m, depth); err != nil {
+		if err := jsonMap(dec, m, depth); err != nil {
 			return nil, err
 		}
 		return m, nil

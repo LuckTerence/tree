@@ -3,6 +3,7 @@ package tree
 import (
 	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -174,40 +175,92 @@ e: {"x":"x"}
 }
 
 func TestMapUnmarshalYAML(t *testing.T) {
-	want := Map{
-		"a": NumberValue(1),
-		"b": BoolValue(true),
-		"c": Nil,
+	testCases := []struct {
+		caseName string
+		init     Map
+		data     string
+		want     Map
+		errText  string
+	}{
+		{
+			caseName: "nil map",
+			data:     "a: 1\nb: true\nc: null\n",
+			want:     Map{"a": NumberValue(1), "b": BoolValue(true), "c": Nil},
+		}, {
+			caseName: "reused map keeps other keys",
+			init:     Map{"z": NumberValue(1)},
+			data:     "a: 1\n",
+			want:     Map{"a": NumberValue(1), "z": NumberValue(1)},
+		}, {
+			caseName: "a sequence is an error",
+			init:     Map{"x": NumberValue(0)},
+			data:     "- 1\n",
+			want:     Map{"x": NumberValue(0)},
+			errText:  "line 1: cannot unmarshal !!seq into tree.Map",
+		}, {
+			caseName: "a scalar is an error",
+			init:     Map{"x": NumberValue(0)},
+			data:     "x\n",
+			want:     Map{"x": NumberValue(0)},
+			errText:  "line 1: cannot unmarshal !!str into tree.Map",
+		},
 	}
-	data := []byte(`a: 1
-b: true
-c: null
-`)
-	var got Map
-	if err := yaml.Unmarshal(data, &got); err != nil {
-		t.Fatal(err)
-	}
-	if !Equal(got, want) {
-		t.Errorf("got %#v; want %#v", got, want)
+	for _, tc := range testCases {
+		t.Run(tc.caseName, func(t *testing.T) {
+			got := tc.init
+			err := yaml.Unmarshal([]byte(tc.data), &got)
+			if (err != nil) != (tc.errText != "") || (err != nil && !strings.Contains(err.Error(), tc.errText)) {
+				t.Fatalf("got %v; want %q", err, tc.errText)
+			}
+			if !Equal(got, tc.want) {
+				t.Errorf("got %#v; want %#v", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestArrayUnmarshalYAML(t *testing.T) {
-	want := Array{
-		StringValue("1"),
-		NumberValue(2),
-		BoolValue(true),
+	seq := Array{StringValue("1"), NumberValue(2), BoolValue(true)}
+	testCases := []struct {
+		caseName string
+		init     Array
+		data     string
+		want     Array
+		errText  string
+	}{
+		{caseName: "empty array", init: Array{}, data: "- \"1\"\n- 2\n- true\n", want: seq},
+		{caseName: "reused array is reset", init: Array{NumberValue(0), NumberValue(0), NumberValue(0), NumberValue(0)}, data: "- \"1\"\n- 2\n- true\n", want: seq},
+		{caseName: "a mapping is an error", init: Array{NumberValue(1)}, data: "a: 1\n", want: Array{NumberValue(1)}, errText: "line 1: cannot unmarshal !!map into tree.Array"},
+		{caseName: "a scalar is an error", init: Array{NumberValue(1)}, data: "x\n", want: Array{NumberValue(1)}, errText: "line 1: cannot unmarshal !!str into tree.Array"},
 	}
-	data := []byte(`- "1"
-- 2
-- true
-`)
-	got := Array{}
-	if err := yaml.Unmarshal(data, &got); err != nil {
-		t.Fatal(err)
+	for _, tc := range testCases {
+		t.Run(tc.caseName, func(t *testing.T) {
+			got := tc.init
+			err := yaml.Unmarshal([]byte(tc.data), &got)
+			if (err != nil) != (tc.errText != "") || (err != nil && !strings.Contains(err.Error(), tc.errText)) {
+				t.Fatalf("got %v; want %q", err, tc.errText)
+			}
+			if !Equal(got, tc.want) {
+				t.Errorf("got %#v; want %#v", got, tc.want)
+			}
+		})
 	}
-	if !Equal(got, want) {
-		t.Errorf("got %#v; want %#v", got, want)
+}
+
+func TestUnmarshalYAMLKindMismatchContinues(t *testing.T) {
+	var got struct {
+		A Array `yaml:"a"`
+		B int   `yaml:"b"`
+		C int   `yaml:"c"`
+	}
+	err := yaml.Unmarshal([]byte("a: {x: 1}\nb: z\nc: 1\n"), &got)
+	for _, want := range []string{"line 1: cannot unmarshal !!map into tree.Array", "line 2: cannot unmarshal"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("got %v; want %q", err, want)
+		}
+	}
+	if got.C != 1 {
+		t.Errorf("got C %d; want 1", got.C)
 	}
 }
 
