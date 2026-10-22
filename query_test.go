@@ -268,6 +268,22 @@ func TestQueryString(t *testing.T) {
 			caseName: "bare dots around a pipe",
 			q:        FilterQuery{NopQuery{}, SlurpQuery{}, NopQuery{}},
 			want:     ". | .",
+		}, {
+			caseName: "map quoted with spaces",
+			q:        MapQuery("b c"),
+			want:     `."b c"`,
+		}, {
+			caseName: "map quoted with escape",
+			q:        MapQuery(`foo"bar`),
+			want:     `."foo\"bar"`,
+		}, {
+			caseName: "walk quoted with spaces",
+			q:        WalkQuery("b c"),
+			want:     `.."b c"`,
+		}, {
+			caseName: "walk quoted with escape",
+			q:        WalkQuery(`foo"bar`),
+			want:     `.."foo\"bar"`,
 		},
 	}
 	for _, tc := range testCases {

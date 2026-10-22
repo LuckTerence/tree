@@ -109,6 +109,12 @@ func TestParseQuery(t *testing.T) {
 			expr: `.'foo\'bar'`,
 			want: MapQuery(`foo'bar`),
 		}, {
+			expr: `."b c"`,
+			want: MapQuery("b c"),
+		}, {
+			expr: `.."b c"`,
+			want: WalkQuery("b c"),
+		}, {
 			expr: `sort("(.foo)")`,
 			want: &SortQuery{
 				Expr:  "(.foo)",
@@ -299,6 +305,13 @@ func TestParseQuery(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("got %#v; want %#v", got, tc.want)
+			}
+			rt, err := ParseQuery(tc.want.String())
+			if err != nil {
+				t.Fatalf("re-parse %q: %v", tc.want.String(), err)
+			}
+			if !reflect.DeepEqual(rt, tc.want) {
+				t.Errorf("round-trip %q -> %q: got %#v; want %#v", tc.expr, tc.want.String(), rt, tc.want)
 			}
 		})
 	}

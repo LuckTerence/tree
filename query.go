@@ -137,7 +137,37 @@ func (q MapQuery) Delete(pn *Node) error {
 }
 
 func (q MapQuery) String() string {
-	return "." + string(q)
+	return formatKey(".", string(q))
+}
+
+func formatKey(prefix, key string) string {
+	if isIdent(key) {
+		return prefix + key
+	}
+	var sb strings.Builder
+	sb.WriteString(prefix)
+	sb.WriteByte('"')
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if c == '"' || c == '\\' {
+			sb.WriteByte('\\')
+		}
+		sb.WriteByte(c)
+	}
+	sb.WriteByte('"')
+	return sb.String()
+}
+
+func isIdent(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !isWord(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // ArrayQuery is an index of the Array that implements methods of the Query.
@@ -494,7 +524,7 @@ func (q WalkQuery) Delete(pn *Node) error {
 }
 
 func (q WalkQuery) String() string {
-	return ".." + string(q)
+	return formatKey("..", string(q))
 }
 
 // Selector checks if a node is eligible for selection.
