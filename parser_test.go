@@ -7,8 +7,9 @@ import (
 
 func TestParseQuery(t *testing.T) {
 	testCases := []struct {
-		expr string
-		want Query
+		expr      string
+		want      Query
+		roundTrip Query // re-parse of want.String(); nil means want
 	}{
 		{
 			expr: `.`,
@@ -112,8 +113,9 @@ func TestParseQuery(t *testing.T) {
 			expr: `."b c"`,
 			want: MapQuery("b c"),
 		}, {
-			expr: `.a.["b c"]`,
-			want: FilterQuery{MapQuery("a"), MapQuery("b c")},
+			expr:      `.a.["b c"]`,
+			want:      FilterQuery{MapQuery("a"), NopQuery{}, MapQuery("b c")},
+			roundTrip: FilterQuery{MapQuery("a"), MapQuery("b c")},
 		}, {
 			expr: `.."b c"`,
 			want: WalkQuery("b c"),
@@ -313,8 +315,12 @@ func TestParseQuery(t *testing.T) {
 			if err != nil {
 				t.Fatalf("re-parse %q: %v", tc.want.String(), err)
 			}
-			if !reflect.DeepEqual(rt, tc.want) {
-				t.Errorf("round-trip %q -> %q: got %#v; want %#v", tc.expr, tc.want.String(), rt, tc.want)
+			wantRT := tc.roundTrip
+			if wantRT == nil {
+				wantRT = tc.want
+			}
+			if !reflect.DeepEqual(rt, wantRT) {
+				t.Errorf("round-trip %q -> %q: got %#v; want %#v", tc.expr, tc.want.String(), rt, wantRT)
 			}
 		})
 	}
