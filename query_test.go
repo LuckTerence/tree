@@ -117,6 +117,13 @@ func TestQuery(t *testing.T) {
 			}},
 			n: Map{},
 		}, {
+			caseName: "select: multiple match error formats quoted query without double escaping",
+			q: SelectQuery{And{
+				Comparator{WalkQuery("b c"), EQ, ValueQuery{ToValue(1)}},
+			}},
+			n:      Array{Map{"x": Map{"b c": ToValue(1)}, "y": Map{"b c": ToValue(2)}}},
+			errstr: `.."b c" returns no single value [1 2]`,
+		}, {
 			caseName: "select: complex",
 			q: SelectQuery{
 				And{

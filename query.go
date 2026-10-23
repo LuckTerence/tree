@@ -644,7 +644,7 @@ func (c Comparator) Matches(n Node) (bool, error) {
 	case 1:
 		l0 = l[0]
 	default:
-		return false, fmt.Errorf("%q returns no single value %+v", c.Left, l)
+		return false, fmt.Errorf("%s returns no single value %+v", c.Left, l)
 	}
 	switch len(r) {
 	case 0:
@@ -652,7 +652,7 @@ func (c Comparator) Matches(n Node) (bool, error) {
 	case 1:
 		r0 = r[0]
 	default:
-		return false, fmt.Errorf("%q returns no single value %+v", c.Right, r)
+		return false, fmt.Errorf("%s returns no single value %+v", c.Right, r)
 	}
 	if l0 == nil || r0 == nil {
 		return (l0 == nil && r0 == nil), nil

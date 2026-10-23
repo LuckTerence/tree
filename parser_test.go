@@ -112,6 +112,9 @@ func TestParseQuery(t *testing.T) {
 			expr: `."b c"`,
 			want: MapQuery("b c"),
 		}, {
+			expr: `.a.["b c"]`,
+			want: FilterQuery{MapQuery("a"), MapQuery("b c")},
+		}, {
 			expr: `.."b c"`,
 			want: WalkQuery("b c"),
 		}, {

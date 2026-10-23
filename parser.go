@@ -400,6 +400,9 @@ func (p *parser) parseStep() (Query, error) {
 			p.skip(1)
 			return MapQuery(next.text), nil
 		}
+		if p.peek().kind == tkLBrack && p.pos > 1 {
+			return p.parseStep()
+		}
 		return NopQuery{}, nil
 	case tkDotDot:
 		if next := p.peek(); next.kind == tkIdent || next.kind == tkString {
