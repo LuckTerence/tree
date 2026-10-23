@@ -295,6 +295,10 @@ func TestRun(t *testing.T) {
 			args:     []string{"-y", ".", "testdata/bom.json"},
 			want:     "a: 1\n",
 		}, {
+			caseName: "yaml document with utf-8 bom is auto-detected as yaml",
+			args:     []string{".", "testdata/bom.yaml"},
+			want:     "a: 1\n",
+		}, {
 			caseName: "truncated json container with utf-8 bom is not read as yaml",
 			args:     []string{".", "testdata/truncated-bom-json"},
 			errstr:   "failed to evaluate testdata/truncated-bom-json: unexpected EOF",
@@ -951,84 +955,84 @@ func (n nonSeekableReader) Seek(offset int64, whence int) (int64, error) {
 
 func TestSkipBOM(t *testing.T) {
 	testCases := []struct {
-		name       string
+		caseName   string
 		input      []byte
 		seekable   bool
 		wantOffset int64
 		wantOutput []byte
 	}{
 		{
-			name:       "empty seekable",
+			caseName:   "empty seekable",
 			input:      []byte{},
 			seekable:   true,
 			wantOffset: 0,
 			wantOutput: []byte{},
 		},
 		{
-			name:       "1-byte seekable",
+			caseName:   "1-byte seekable",
 			input:      []byte("{"),
 			seekable:   true,
 			wantOffset: 0,
 			wantOutput: []byte("{"),
 		},
 		{
-			name:       "2-byte seekable",
+			caseName:   "2-byte seekable",
 			input:      []byte("{}"),
 			seekable:   true,
 			wantOffset: 0,
 			wantOutput: []byte("{}"),
 		},
 		{
-			name:       "3-byte non-BOM seekable",
+			caseName:   "3-byte non-BOM seekable",
 			input:      []byte("foo"),
 			seekable:   true,
 			wantOffset: 0,
 			wantOutput: []byte("foo"),
 		},
 		{
-			name:       "UTF-8 BOM seekable",
+			caseName:   "UTF-8 BOM seekable",
 			input:      append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"a":1}`)...),
 			seekable:   true,
 			wantOffset: 3,
 			wantOutput: []byte(`{"a":1}`),
 		},
 		{
-			name:       "double UTF-8 BOM seekable skips only first BOM",
+			caseName:   "double UTF-8 BOM seekable skips only first BOM",
 			input:      append([]byte{0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF}, []byte(`{"a":1}`)...),
 			seekable:   true,
 			wantOffset: 3,
 			wantOutput: append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"a":1}`)...),
 		},
 		{
-			name:       "empty non-seekable",
+			caseName:   "empty non-seekable",
 			input:      []byte{},
 			seekable:   false,
 			wantOffset: 0,
 			wantOutput: []byte{},
 		},
 		{
-			name:       "1-byte non-seekable",
+			caseName:   "1-byte non-seekable",
 			input:      []byte("{"),
 			seekable:   false,
 			wantOffset: 0,
 			wantOutput: []byte("{"),
 		},
 		{
-			name:       "2-byte non-seekable",
+			caseName:   "2-byte non-seekable",
 			input:      []byte("{}"),
 			seekable:   false,
 			wantOffset: 0,
 			wantOutput: []byte("{}"),
 		},
 		{
-			name:       "3-byte non-BOM non-seekable",
+			caseName:   "3-byte non-BOM non-seekable",
 			input:      []byte("foo"),
 			seekable:   false,
 			wantOffset: 0,
 			wantOutput: []byte("foo"),
 		},
 		{
-			name:       "UTF-8 BOM non-seekable",
+			caseName:   "UTF-8 BOM non-seekable",
 			input:      append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"a":1}`)...),
 			seekable:   false,
 			wantOffset: 3,
@@ -1037,7 +1041,7 @@ func TestSkipBOM(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.caseName, func(t *testing.T) {
 			var in io.ReadSeeker
 			if tc.seekable {
 				in = bytes.NewReader(tc.input)
